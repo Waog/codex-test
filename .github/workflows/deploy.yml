@@ -72,26 +72,46 @@ jobs:
         run: ls -R
         working-directory: dist
 
-      - name: Deploy PR preview
-        id: deploy_preview
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: dist
-          target-folder: pr/${{ github.event.number }}
-          clean: false
-          single-commit: false
-          git-config-name: github-actions[bot]
-          git-config-email: 41898282+github-actions[bot]@users.noreply.github.com
+      - name: Publish PR preview
+        id: publish_preview
+        run: |
+          set -euo pipefail
+          original_head=$(git rev-parse HEAD)
+          trap 'git checkout --force "$original_head" >/dev/null 2>&1 || true' EXIT
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages
+            git checkout gh-pages
+            git reset --hard origin/gh-pages
+          else
+            git checkout --orphan gh-pages
+            find . -mindepth 1 -maxdepth 1 \( -not -path './.git' -and -not -path './dist' \) -exec rm -rf {} +
+          fi
+          mkdir -p pr
+          rm -rf "pr/${{ github.event.number }}"
+          mkdir -p "pr/${{ github.event.number }}"
+          rsync -a --delete dist/ "pr/${{ github.event.number }}/"
+          touch .nojekyll
+          git add -A "pr/${{ github.event.number }}" .nojekyll
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Deploy preview for PR #${{ github.event.number }}"
+            git push origin gh-pages
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish preview link
-        if: steps.deploy_preview.outcome == 'success'
         run: |
-          echo "### ✅ Preview deployed" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.publish_preview.outputs.changed }}" = "true" ]; then
+            echo "### ✅ Preview deployed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ℹ️ Preview already up to date" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "https://waog.github.io/codex-test/pr/${{ github.event.number }}/" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Share preview link
-        if: steps.deploy_preview.outcome == 'success'
         uses: thollander/actions-comment-pull-request@v2
         with:
           comment_tag: preview-url
@@ -120,22 +140,41 @@ jobs:
         run: ls -R
         working-directory: dist
 
-      - name: Deploy main site
-        id: deploy_production
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: dist
-          clean: true
-          clean-exclude: |
-            pr
-            pr/**
-          single-commit: false
-          git-config-name: github-actions[bot]
-          git-config-email: 41898282+github-actions[bot]@users.noreply.github.com
+      - name: Publish production site
+        id: publish_production
+        run: |
+          set -euo pipefail
+          original_head=$(git rev-parse HEAD)
+          trap 'git checkout --force "$original_head" >/dev/null 2>&1 || true' EXIT
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages
+            git checkout gh-pages
+            git reset --hard origin/gh-pages
+          else
+            git checkout --orphan gh-pages
+            find . -mindepth 1 -maxdepth 1 \( -not -path './.git' -and -not -path './dist' \) -exec rm -rf {} +
+          fi
+          mkdir -p pr
+          find . -mindepth 1 -maxdepth 1 ! -name 'pr' ! -name '.git' ! -name 'dist' -exec rm -rf {} +
+          rsync -a dist/ ./
+          rm -rf dist
+          touch .nojekyll
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Deploy production from ${GITHUB_SHA}"
+            git push origin gh-pages
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish production link
-        if: steps.deploy_production.outcome == 'success'
         run: |
-          echo "### 🚀 Production deployed" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.publish_production.outputs.changed }}" = "true" ]; then
+            echo "### 🚀 Production deployed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ℹ️ Production already up to date" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "https://waog.github.io/codex-test/" >> "$GITHUB_STEP_SUMMARY"

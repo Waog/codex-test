@@ -34,7 +34,7 @@ After these steps, the workflow will deploy:
 - `main` branch builds to the primary site URL (e.g., `https://<user>.github.io/<repo>/`).
 - Pull requests build preview environments at URLs like `https://<user>.github.io/<repo>/pr/<number>/`, and the workflow comments the exact link on each PR for easy access.
 
-Preview folders stay published until you delete them (for example, by removing the corresponding `pr/<number>` directory from the `gh-pages` branch or adding a cleanup workflow).
+The workflow keeps the `gh-pages` branch authoritative for both production and previews. Each PR write replaces only its own `pr/<number>/` directory so the published preview stays available (and immediately updates on new commits) without disturbing other previews or the main site. Preview folders remain published until you delete them manually—for example, by removing the corresponding directory from `gh-pages` or adding a separate cleanup job.
 
 ## Offline & PWA details
 - The service worker caches the app shell, generated feedback tones, icons, and the full syllable mapping JSON for offline play after first load.
