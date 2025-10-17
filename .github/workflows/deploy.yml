@@ -59,11 +59,18 @@ jobs:
       name: preview/pr-${{ github.event.number }}
       url: https://waog.github.io/codex-test/pr/${{ github.event.number }}/
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: dist
+
+      - name: List preview files
+        run: ls -R
+        working-directory: dist
 
       - name: Deploy PR preview
         uses: JamesIves/github-pages-deploy-action@v4
@@ -94,11 +101,18 @@ jobs:
       name: production
       url: https://waog.github.io/codex-test/
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: dist
+
+      - name: List production files
+        run: ls -R
+        working-directory: dist
 
       - name: Deploy main site
         uses: JamesIves/github-pages-deploy-action@v4
