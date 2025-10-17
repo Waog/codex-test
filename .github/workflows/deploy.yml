@@ -15,8 +15,11 @@ concurrency:
   group: deploy-pages-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  ARTIFACT_NAME: dist-${{ github.run_id }}
+
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,8 +44,63 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist
+          retention-days: 1
+
+  deploy-preview:
+    if: github.event_name == 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: preview/pr-${{ github.event.number }}
+      url: https://waog.github.io/codex-test/pr/${{ github.event.number }}/
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: .
+
+      - name: Deploy PR preview
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: dist
+          clean: false
+          target-folder: pr/${{ github.event.number }}
+
+      - name: Publish preview link
+        run: |
+          echo "### ✅ Preview deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://waog.github.io/codex-test/pr/${{ github.event.number }}/" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Share preview link
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          comment_tag: preview-url
+          message: |
+            ✅ A preview of this pull request is available at:
+            https://waog.github.io/codex-test/pr/${{ github.event.number }}/
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://waog.github.io/codex-test/
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: .
+
       - name: Deploy main site
-        if: github.ref == 'refs/heads/main'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
@@ -51,20 +109,7 @@ jobs:
           clean-exclude: |
             pr
 
-      - name: Deploy PR preview
-        if: github.event_name == 'pull_request'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: dist
-          clean: true
-          target-folder: pr/${{ github.event.number }}
-
-      - name: Share preview link
-        if: github.event_name == 'pull_request'
-        uses: thollander/actions-comment-pull-request@v2
-        with:
-          comment-tag: preview-url
-          message: |
-            ✅ A preview of this pull request is available at:
-            https://waog.github.io/codex-test/pr/${{ github.event.number }}/
+      - name: Publish production link
+        run: |
+          echo "### 🚀 Production deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://waog.github.io/codex-test/" >> "$GITHUB_STEP_SUMMARY"
