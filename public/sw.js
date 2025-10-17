@@ -1,8 +1,9 @@
-const CACHE_NAME = 'tone-trainer-v2';
+const CACHE_NAME = 'tone-trainer-v3';
 const ASSETS = [
   './',
   './index.html',
   './assets/main.js',
+  './assets/vendor.js',
   './assets/index.css',
   './manifest.webmanifest',
   './icon-192.svg',
@@ -12,7 +13,17 @@ const ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await Promise.all(
+        ASSETS.map(async (asset) => {
+          try {
+            await cache.add(asset);
+          } catch (error) {
+            console.warn('Failed to precache', asset, error);
+          }
+        })
+      );
+    })
   );
 });
 

@@ -23,9 +23,9 @@ npm run build
 The static output is written to `dist/` and automatically deployed to GitHub Pages via the provided workflow on pushes to `main`.
 
 ## Offline & PWA details
-- The service worker caches the app shell, audio cues, icons, and the full syllable mapping JSON for offline play after first load.
+- The service worker caches the app shell, generated feedback tones, icons, and the full syllable mapping JSON for offline play after first load.
 - `start_url` is `./` so the PWA works from any subpath (e.g., GitHub Pages or a custom domain).
-- Two feedback sounds (`correct.wav`, `wrong.wav`) offer immediate response cues. A dedicated manifest and icons enable “Add to Home Screen”.
+- Positive/negative feedback cues are synthesized on the fly via the Web Audio API. A dedicated manifest and icons enable “Add to Home Screen”.
 
 ## Data & privacy
 All histories and settings are stored locally in the browser via `localStorage`. Use the **Reset all data** button in the Stats & Settings tab to clear progress and voice selection.
