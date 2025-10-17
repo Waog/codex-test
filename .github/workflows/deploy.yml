@@ -1,46 +1,185 @@
-name: Deploy PWA
+name: Continuous Deployment
 
 on:
   push:
-    branches: ["main"]
-  workflow_dispatch:
+    branches:
+      - "**"
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: true
 
 jobs:
+  build_matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      json_branches: ${{ steps.generate_matrix.outputs.json_branches }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate matrix
+        id: generate_matrix
+        run: |
+          set -euo pipefail
+
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+          mapfile -t branches < <(
+            git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin \
+              | grep -v '^HEAD$' \
+              | grep -v '^gh-pages$' \
+              | sort -u
+          )
+
+          if [ ${#branches[@]} -eq 0 ]; then
+            branches=("${GITHUB_REF_NAME}")
+          fi
+
+          declare -a ordered=()
+          for branch in "${branches[@]}"; do
+            if [ "${branch}" = "main" ]; then
+              ordered=("${branch}" "${ordered[@]}")
+            else
+              ordered+=("${branch}")
+            fi
+          done
+
+          json_branches=$(printf '%s\n' "${ordered[@]}" | jq -R . | jq -s -c .)
+          echo "json_branches=${json_branches}" >> "$GITHUB_OUTPUT"
+
   build:
     runs-on: ubuntu-latest
+    name: Build
+    needs:
+      - build_matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.build_matrix.outputs.json_branches) }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          ref: ${{ matrix.branch }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Install dependencies
         run: npm install
+
       - name: Build
         run: npm run build
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v2
+
+      - name: Preserve static routing
+        run: touch dist/.nojekyll
+
+      - uses: actions/upload-artifact@v4
         with:
+          name: ${{ strategy.job-index }}
           path: dist
 
   deploy:
     runs-on: ubuntu-latest
-    needs: build
+    name: Deploy
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    needs:
+      - build_matrix
+      - build
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Download build artifacts
+        run: gh run download ${{ github.run_id }} --dir branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble publish directory
+        env:
+          JSON_BRANCHES: ${{ needs.build_matrix.outputs.json_branches }}
+        run: |
+          set -euo pipefail
+
+          rm -rf public
+          mkdir -p public/branches
+
+          cat <<'HTML' > public/branches/index.html
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>Available branch builds</title>
+              <style>
+                body { font-family: system-ui, sans-serif; margin: 2rem; }
+                h1 { font-size: 1.75rem; }
+                ul { list-style: disc; padding-left: 1.5rem; }
+                li { margin: 0.25rem 0; }
+                code { background: #f5f5f5; padding: 0.1rem 0.25rem; border-radius: 0.25rem; }
+              </style>
+            </head>
+            <body>
+              <h1>Branch preview builds</h1>
+              <p>Each branch publishes a static build under <code>/branches/&lt;branch&gt;/</code>. The default branch is also available at the site root.</p>
+              <ul>
+          HTML
+
+          branches=$(echo "${JSON_BRANCHES}" | jq -r '.[]')
+          i=0
+          main_source=""
+
+          for branch in ${branches}; do
+            artifact_dir="branches/${i}"
+            target_dir="public/branches/${branch}"
+
+            mkdir -p "${target_dir}"
+            cp -a "${artifact_dir}/." "${target_dir}/"
+
+            if [ "${branch}" = "main" ]; then
+              main_source="${artifact_dir}"
+            fi
+
+            printf '                <li><a href="./%s/">%s</a></li>\n' "${branch}" "${branch}" >> public/branches/index.html
+            i=$((i + 1))
+          done
+
+          cat <<'HTML' >> public/branches/index.html
+              </ul>
+              <p><a href="../">Back to the main site</a></p>
+            </body>
+          </html>
+          HTML
+
+          if [ -n "${main_source}" ]; then
+            cp -a "${main_source}/." public/
+          else
+            echo "Main branch not built; keeping existing root output" >&2
+          fi
+
+          touch public/.nojekyll
+          find public -maxdepth 2 -type d | sort
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
