@@ -22,6 +22,21 @@ npm run build
 ```
 The static output is written to `dist/` and automatically deployed to GitHub Pages via the provided workflow on pushes to `main`.
 
+## Configuring GitHub Pages deployments
+Follow these steps once to allow the workflow to publish production and preview builds:
+
+1. Open your repository settings in GitHub and navigate to **Pages**.
+2. Under **Source**, choose **GitHub Actions** and save. This enables Pages for the repo so `actions/deploy-pages` can create deployments.
+3. Still in **Settings → Pages**, confirm that the **Build and deployment** section shows “GitHub Actions” as the source.
+4. (Optional) If you use a custom domain, configure it in the same section after the first production deployment completes.
+
+After these steps, the workflow will deploy:
+
+- `main` branch builds to the primary site URL (e.g., `https://<user>.github.io/<repo>/`).
+- Pull requests build preview environments at longer URLs listed in the run summary.
+
+Each pull request run automatically tears down its preview when the PR is closed or merged.
+
 ## Offline & PWA details
 - The service worker caches the app shell, generated feedback tones, icons, and the full syllable mapping JSON for offline play after first load.
 - `start_url` is `./` so the PWA works from any subpath (e.g., GitHub Pages or a custom domain).
