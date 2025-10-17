@@ -28,21 +28,22 @@ jobs:
       - name: Generate matrix
         id: generate_matrix
         run: |
+          set -euo pipefail
+
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
           mapfile -t branches < <(
-            git branch -r \
-              | sed 's/^  *//' \
-              | grep -v '->' \
-              | sed 's|origin/||' \
+            git for-each-ref --format='%(refname:strip=2)' refs/remotes/origin \
+              | grep -v '^HEAD$' \
               | grep -v '^gh-pages$' \
               | sort -u
           )
 
           if [ ${#branches[@]} -eq 0 ]; then
-            echo "json_branches=[]" >> "$GITHUB_OUTPUT"
-            exit 0
+            branches=("${GITHUB_REF_NAME}")
           fi
 
-          ordered=()
+          declare -a ordered=()
           for branch in "${branches[@]}"; do
             if [ "${branch}" = "main" ]; then
               ordered=("${branch}" "${ordered[@]}")
