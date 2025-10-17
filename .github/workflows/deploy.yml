@@ -1,42 +1,76 @@
-name: Deploy to GitHub Pages
+name: Continuous Deployment
 
 on:
   push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
-  workflow_dispatch:
+    branches:
+      - "**"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
 
 concurrency:
-  group: deploy-pages-${{ github.ref }}
+  group: pages
   cancel-in-progress: true
 
-env:
-  ARTIFACT_NAME: dist-${{ github.run_id }}
-
 jobs:
+  build_matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      json_branches: ${{ steps.generate_matrix.outputs.json_branches }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate matrix
+        id: generate_matrix
+        run: |
+          mapfile -t branches < <(
+            git branch -r \
+              | sed 's/^  *//' \
+              | grep -v '->' \
+              | sed 's|origin/||' \
+              | grep -v '^gh-pages$' \
+              | sort -u
+          )
+
+          if [ ${#branches[@]} -eq 0 ]; then
+            echo "json_branches=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ordered=()
+          for branch in "${branches[@]}"; do
+            if [ "${branch}" = "main" ]; then
+              ordered=("${branch}" "${ordered[@]}")
+            else
+              ordered+=("${branch}")
+            fi
+          done
+
+          json_branches=$(printf '%s\n' "${ordered[@]}" | jq -R . | jq -s -c .)
+          echo "json_branches=${json_branches}" >> "$GITHUB_OUTPUT"
+
   build:
     runs-on: ubuntu-latest
+    name: Build
+    needs:
+      - build_matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.build_matrix.outputs.json_branches) }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node (with cache)
-        if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock', '**/pnpm-lock.yaml') != '' }}
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          ref: ${{ matrix.branch }}
 
-      - name: Setup Node (no cache)
-        if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock', '**/pnpm-lock.yaml') == '' }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
       - name: Install dependencies
         run: npm install
@@ -44,96 +78,107 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Add .nojekyll marker
+      - name: Preserve static routing
         run: touch dist/.nojekyll
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
+          name: ${{ strategy.job-index }}
           path: dist
-          retention-days: 1
 
-  deploy-preview:
-    if: github.event_name == 'pull_request'
-    needs: build
+  deploy:
     runs-on: ubuntu-latest
+    name: Deploy
     environment:
-      name: preview/pr-${{ github.event.number }}
-      url: https://waog.github.io/codex-test/pr/${{ github.event.number }}/
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs:
+      - build_matrix
+      - build
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: dist
+          fetch-depth: 0
 
-      - name: List preview files
-        run: ls -R
-        working-directory: dist
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
-      - name: Deploy preview files
-        id: deploy_preview
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: dist
-          destination_dir: pr/${{ github.event.number }}
-          keep_files: true
-          force_orphan: false
+      - name: Download build artifacts
+        run: gh run download ${{ github.run_id }} --dir branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish preview link
-        if: ${{ steps.deploy_preview.outcome == 'success' }}
+      - name: Assemble publish directory
+        env:
+          JSON_BRANCHES: ${{ needs.build_matrix.outputs.json_branches }}
         run: |
-          echo "### ✅ Preview deployed" >> "$GITHUB_STEP_SUMMARY"
-          echo "https://waog.github.io/codex-test/pr/${{ github.event.number }}/" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
 
-      - name: Share preview link
-        if: ${{ steps.deploy_preview.outcome == 'success' }}
-        uses: thollander/actions-comment-pull-request@v2
+          rm -rf public
+          mkdir -p public/branches
+
+          cat <<'HTML' > public/branches/index.html
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>Available branch builds</title>
+              <style>
+                body { font-family: system-ui, sans-serif; margin: 2rem; }
+                h1 { font-size: 1.75rem; }
+                ul { list-style: disc; padding-left: 1.5rem; }
+                li { margin: 0.25rem 0; }
+                code { background: #f5f5f5; padding: 0.1rem 0.25rem; border-radius: 0.25rem; }
+              </style>
+            </head>
+            <body>
+              <h1>Branch preview builds</h1>
+              <p>Each branch publishes a static build under <code>/branches/&lt;branch&gt;/</code>. The default branch is also available at the site root.</p>
+              <ul>
+          HTML
+
+          branches=$(echo "${JSON_BRANCHES}" | jq -r '.[]')
+          i=0
+          main_source=""
+
+          for branch in ${branches}; do
+            artifact_dir="branches/${i}"
+            target_dir="public/branches/${branch}"
+
+            mkdir -p "${target_dir}"
+            cp -a "${artifact_dir}/." "${target_dir}/"
+
+            if [ "${branch}" = "main" ]; then
+              main_source="${artifact_dir}"
+            fi
+
+            printf '                <li><a href="./%s/">%s</a></li>\n' "${branch}" "${branch}" >> public/branches/index.html
+            i=$((i + 1))
+          done
+
+          cat <<'HTML' >> public/branches/index.html
+              </ul>
+              <p><a href="../">Back to the main site</a></p>
+            </body>
+          </html>
+          HTML
+
+          if [ -n "${main_source}" ]; then
+            cp -a "${main_source}/." public/
+          else
+            echo "Main branch not built; keeping existing root output" >&2
+          fi
+
+          touch public/.nojekyll
+          find public -maxdepth 2 -type d | sort
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          comment_tag: preview-url
-          message: |
-            ✅ A preview of this pull request is available at:
-            https://waog.github.io/codex-test/pr/${{ github.event.number }}/
+          path: public
 
-  deploy-production:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://waog.github.io/codex-test/
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: dist
-
-      - name: List production files
-        run: ls -R
-        working-directory: dist
-
-      - name: Deploy production site
-        id: deploy_production
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: dist
-          keep_files: true
-          force_orphan: false
-
-      - name: Publish production link
-        if: ${{ steps.deploy_production.outcome == 'success' }}
-        run: |
-          echo "### 🚀 Production deployed" >> "$GITHUB_STEP_SUMMARY"
-          echo "https://waog.github.io/codex-test/" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

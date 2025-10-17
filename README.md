@@ -23,18 +23,18 @@ npm run build
 The static output is written to `dist/` and automatically deployed to GitHub Pages via the provided workflow on pushes to `main`.
 
 ## Configuring GitHub Pages deployments
-Follow these steps once to allow the workflow to publish production and preview builds:
+The repository ships with a GitHub Actions workflow that rebuilds **every** remote branch on each push, then publishes them side by side through GitHub Pages. To enable it:
 
-1. Open your repository settings in GitHub and navigate to **Pages**.
-2. Under **Build and deployment**, choose **Deploy from a branch** and select the `gh-pages` branch with the `/ (root)` folder, then save. This lets GitHub serve the branch populated by the workflow.
-3. (Optional) If you use a custom domain, configure it in the same section after the first production deployment completes.
+1. In **Settings → Pages**, set **Build and deployment** to **GitHub Actions**.
+2. (Optional) Configure a custom domain once the first deployment finishes.
 
-After these steps, the workflow will deploy:
+Once enabled, each push triggers three stages:
 
-- `main` branch builds to the primary site URL (e.g., `https://<user>.github.io/<repo>/`).
-- Pull requests build preview environments at URLs like `https://<user>.github.io/<repo>/pr/<number>/`, and the workflow comments the exact link on each PR for easy access.
+1. Discover all remote branches (excluding `gh-pages`).
+2. Build each branch in parallel and upload the resulting `dist/` folders as artifacts.
+3. Assemble a Pages artifact where the `main` branch populates the root site (`https://<user>.github.io/<repo>/`) and every branch is available under `https://<user>.github.io/<repo>/branches/<branch>/`.
 
-The workflow keeps the `gh-pages` branch authoritative for both production and previews. Each PR write replaces only its own `pr/<number>/` directory so the published preview stays available (and immediately updates on new commits) without disturbing other previews or the main site. Preview folders remain published until you delete them manually—for example, by removing the corresponding directory from `gh-pages` or adding a separate cleanup job.
+The workflow also publishes a lightweight directory listing at `/branches/` so you can quickly jump between branch builds. Because every branch is rebuilt on every push, the published content always reflects the latest state of the repository—even for branches that did not receive the most recent commit.
 
 ## Offline & PWA details
 - The service worker caches the app shell, generated feedback tones, icons, and the full syllable mapping JSON for offline play after first load.
