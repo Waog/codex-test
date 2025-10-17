@@ -33,7 +33,7 @@ Follow these steps once to allow the workflow to publish production and preview 
 After these steps, the workflow will deploy:
 
 - `main` branch builds to the primary site URL (e.g., `https://<user>.github.io/<repo>/`).
-- Pull requests build preview environments at longer URLs listed in the run summary.
+- Pull requests build preview environments at longer URLs listed in the run summary (e.g., `https://<user>.github.io/<repo>/preview-pr-<number>/`).
 
 Each pull request run automatically tears down its preview when the PR is closed or merged.
 
