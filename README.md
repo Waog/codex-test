@@ -26,16 +26,15 @@ The static output is written to `dist/` and automatically deployed to GitHub Pag
 Follow these steps once to allow the workflow to publish production and preview builds:
 
 1. Open your repository settings in GitHub and navigate to **Pages**.
-2. Under **Source**, choose **GitHub Actions** and save. This enables Pages for the repo so `actions/deploy-pages` can create deployments.
-3. Still in **Settings → Pages**, confirm that the **Build and deployment** section shows “GitHub Actions” as the source.
-4. (Optional) If you use a custom domain, configure it in the same section after the first production deployment completes.
+2. Under **Build and deployment**, choose **Deploy from a branch** and select the `gh-pages` branch with the `/ (root)` folder, then save. This lets GitHub serve the branch populated by the workflow.
+3. (Optional) If you use a custom domain, configure it in the same section after the first production deployment completes.
 
 After these steps, the workflow will deploy:
 
 - `main` branch builds to the primary site URL (e.g., `https://<user>.github.io/<repo>/`).
-- Pull requests build preview environments at longer URLs listed in the run summary (e.g., `https://<user>.github.io/<repo>/preview-pr-<number>/`).
+- Pull requests build preview environments at URLs like `https://<user>.github.io/<repo>/pr/<number>/`, and the workflow comments the exact link on each PR for easy access.
 
-Each pull request run automatically tears down its preview when the PR is closed or merged.
+Preview folders stay published until you delete them (for example, by removing the corresponding `pr/<number>` directory from the `gh-pages` branch or adding a cleanup workflow).
 
 ## Offline & PWA details
 - The service worker caches the app shell, generated feedback tones, icons, and the full syllable mapping JSON for offline play after first load.
