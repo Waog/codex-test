@@ -73,19 +73,25 @@ jobs:
         working-directory: dist
 
       - name: Deploy PR preview
+        id: deploy_preview
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
           folder: dist
-          clean: false
           target-folder: pr/${{ github.event.number }}
+          clean: false
+          single-commit: false
+          git-config-name: github-actions[bot]
+          git-config-email: 41898282+github-actions[bot]@users.noreply.github.com
 
       - name: Publish preview link
+        if: steps.deploy_preview.outcome == 'success'
         run: |
           echo "### ✅ Preview deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "https://waog.github.io/codex-test/pr/${{ github.event.number }}/" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Share preview link
+        if: steps.deploy_preview.outcome == 'success'
         uses: thollander/actions-comment-pull-request@v2
         with:
           comment_tag: preview-url
@@ -115,6 +121,7 @@ jobs:
         working-directory: dist
 
       - name: Deploy main site
+        id: deploy_production
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
@@ -122,8 +129,13 @@ jobs:
           clean: true
           clean-exclude: |
             pr
+            pr/**
+          single-commit: false
+          git-config-name: github-actions[bot]
+          git-config-email: 41898282+github-actions[bot]@users.noreply.github.com
 
       - name: Publish production link
+        if: steps.deploy_production.outcome == 'success'
         run: |
           echo "### 🚀 Production deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "https://waog.github.io/codex-test/" >> "$GITHUB_STEP_SUMMARY"
