@@ -63,7 +63,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: .
+          path: dist
 
       - name: Deploy PR preview
         uses: JamesIves/github-pages-deploy-action@v4
@@ -98,7 +98,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: .
+          path: dist
 
       - name: Deploy main site
         uses: JamesIves/github-pages-deploy-action@v4
